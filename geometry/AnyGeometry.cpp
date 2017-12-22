@@ -168,12 +168,12 @@ size_t AnyGeometry3D::NumElements() const
 
 bool AnyGeometry3D::CanLoadExt(const char* ext)
 {
-  return Meshing::CanLoadTriMeshExt(ext) || 0==strcmp(ext,"pcd") || 0==strcmp(ext,"vol") || 0==strcmp(ext,"geom");
+  return Meshing::CanLoadTriMeshExt(ext) || 0==strcmp(ext,"pcd") || 0==strcmp(ext,"vol") || 0==strcmp(ext,"geom") || 0==strcmp(ext,"group");
 }
 
 bool AnyGeometry3D::CanSaveExt(const char* ext)
 {
-  return Meshing::CanSaveTriMeshExt(ext) || 0==strcmp(ext,"pcd") || 0==strcmp(ext,"vol") || 0==strcmp(ext,"geom");
+  return Meshing::CanSaveTriMeshExt(ext) || 0==strcmp(ext,"pcd") || 0==strcmp(ext,"vol") || 0==strcmp(ext,"geom") || 0==strcmp(ext,"group");
 }
 
 bool AnyGeometry3D::Load(const char* fn)
@@ -238,10 +238,16 @@ bool AnyGeometry3D::Save(const char* fn) const
     if(Meshing::CanSaveTriMeshExt(ext)) {
       return Meshing::Export(fn,this->AsTriangleMesh());
     }
+    else {
+      LOG4CXX_WARN(KrisLibrary::logger(),"AnyGeometry3D::Save: Unknown mesh file extension "<<fn);
+    }
     break;
   case PointCloud:
     if(0==strcmp(ext,"pcd")) {
       return this->AsPointCloud().SavePCL(fn);
+    }
+    else {
+      LOG4CXX_WARN(KrisLibrary::logger(),"AnyGeometry3D::Save: Unknown point cloud file extension "<<fn);
     }
     break;
   case ImplicitSurface:
@@ -299,8 +305,15 @@ bool AnyGeometry3D::Load(istream& in)
     in >> this->AsImplicitSurface();
   }
   else if(typestr == "Group") {
-        LOG4CXX_ERROR(KrisLibrary::logger(),"AnyGeometry::Load(): TODO: groups\n");
-    return false;
+    int n;
+    in >> n;
+    if (!in || n < 0) return false;
+    vector<AnyGeometry3D> grp(n);
+    for(size_t i=0;i<grp.size();i++)
+      if(!grp[i].Load(in)) return false;
+    type = Group;
+    data = grp;
+    return true;
   }
   else {
         LOG4CXX_ERROR(KrisLibrary::logger(),"AnyGeometry::Load(): Unknown type "<<typestr.c_str());
@@ -326,8 +339,13 @@ bool AnyGeometry3D::Save(ostream& out) const
     out<<this->AsImplicitSurface()<<endl;
     break;
   case Group:
-        LOG4CXX_ERROR(KrisLibrary::logger(),"AnyGeometry::Save(): TODO: groups\n");
-    return false;
+    {
+      const vector<AnyGeometry3D>& grp = this->AsGroup();
+      out<<grp.size()<<endl;
+      for(size_t i=0;i<grp.size();i++)
+        if(!grp[i].Save(out)) return false;
+      return true;
+    }
   }
   return true;
 }
@@ -532,6 +550,52 @@ void AnyCollisionGeometry3D::ReinitCollisionData()
   }
   SetTransform(T);
   assert(!collisionData.empty());
+}
+
+AABB3D AnyCollisionGeometry3D::GetAABBTight() const
+{
+  switch(type) {
+  case Primitive:
+  case ImplicitSurface:
+    return GetAABB();
+    break;
+  case TriangleMesh:
+    {
+      const CollisionMesh& m = TriangleMeshCollisionData();
+      AABB3D bb;
+      bb.minimize();
+      for(size_t i=0;i<m.verts.size();i++)
+        bb.expand(m.currentTransform*m.verts[i]);
+      return bb;
+    }
+    break;
+  case PointCloud:
+    {
+      const CollisionPointCloud& pc = PointCloudCollisionData();
+      AABB3D bb;
+      bb.minimize();
+      for(size_t i=0;i<pc.points.size();i++)
+        bb.expand(pc.currentTransform*pc.points[i]);
+      return bb;
+    }
+    break;
+  case Group:
+    {
+      const vector<AnyCollisionGeometry3D>& items = GroupCollisionData();
+      AABB3D bb;
+      bb.minimize();
+      for(size_t i=0;i<items.size();i++)
+  bb.setUnion(items[i].GetAABBTight());
+      if(margin != 0) {
+  bb.bmin -= Vector3(margin);
+  bb.bmax += Vector3(margin);
+      }
+      return bb;
+    }
+  }
+  AssertNotReached();
+  AABB3D bb;
+  return bb;
 }
 
 AABB3D AnyCollisionGeometry3D::GetAABB() const
