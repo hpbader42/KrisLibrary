@@ -4,11 +4,107 @@
 #include <string.h>
 #include <errors.h>
 #include <utils/stringutils.h>
+#if HAVE_FREE_IMAGE
+#include "FreeImage.h"
+#endif //HAVE_FREE_IMAGE
 
 const char* ImageImportTypes()
 {
 	return ".bit;.ppm;.bmp;.tga;";
 }
+
+#if HAVE_FREE_IMAGE
+class FreeImageInitializer
+{
+public:
+	FreeImageInitializer() : initialized(false) {}
+	void initialize() {
+		if(!initialized) {
+			FreeImage_Initialise();
+			initialized = true;
+			int res;
+			LOG4CXX_INFO(KrisLibrary::logger(),"Initializing FreeImage...");
+			res = FreeImage_SetPluginEnabled(FIF_BMP,1);
+			LOG4CXX_INFO(KrisLibrary::logger(),"  BMP enabled: "<<res);
+			res = FreeImage_SetPluginEnabled(FIF_PNG,1);
+			LOG4CXX_INFO(KrisLibrary::logger(),"  PNG enabled: "<<res);
+			res = FreeImage_SetPluginEnabled(FIF_JPEG,1);
+			LOG4CXX_INFO(KrisLibrary::logger(),"  JPEG enabled: "<<res);
+			res = FreeImage_SetPluginEnabled(FIF_TIFF,1);
+			LOG4CXX_INFO(KrisLibrary::logger(),"  TIFF enabled: "<<res);
+		}
+	}
+	~FreeImageInitializer() { if(initialized) FreeImage_DeInitialise(); }
+	bool initialized;
+};
+
+FreeImageInitializer _free_image_initializer;
+
+void FreeImageBitmapToImage(FIBITMAP* fimg,Image& img)
+{
+	int w=FreeImage_GetWidth(fimg);
+	int h=FreeImage_GetWidth(fimg);
+	Image::PixelFormat fmt;
+	FREE_IMAGE_TYPE imgtype = FreeImage_GetImageType(fimg);
+	FREE_IMAGE_COLOR_TYPE coltype = FreeImage_GetColorType(fimg);
+	switch(coltype) {
+	case FIC_MINISWHITE:
+		fmt = Image::A8;
+		break;
+	case FIC_MINISBLACK:
+		fmt = Image::A8;
+		break;
+	case FIC_RGB:
+		fmt = Image::R8G8B8;
+		break;
+	case FIC_PALETTE:
+		fmt = Image::R8G8B8;
+		break;
+	case FIC_RGBALPHA:
+		fmt = Image::A8R8G8B8;
+		break;
+	case FIC_CMYK:
+		fmt = Image::R8G8B8;
+		break;
+	}
+	img.initialize(w,h,fmt);
+	if(fmt == Image::R8G8B8) {
+		RGBQUAD rgb;
+		for(int i=0;i<h;i++) {
+			for(int j=0;j<w;j++) {
+				FreeImage_GetPixelColor(fimg,j,i,&rgb);
+				unsigned char* d=img.getData(j,i);
+				d[0] = rgb.rgbBlue;
+				d[1] = rgb.rgbGreen;
+				d[2] = rgb.rgbRed;
+			}
+		}
+	}
+	else if(fmt == Image::A8R8G8B8) {
+		RGBQUAD rgb;
+		for(int i=0;i<h;i++) {
+			for(int j=0;j<w;j++) {
+				FreeImage_GetPixelColor(fimg,j,i,&rgb);
+				unsigned char* d=img.getData(j,i);
+				d[0] = rgb.rgbBlue;
+				d[1] = rgb.rgbGreen;
+				d[2] = rgb.rgbRed;
+				d[3] = 0xff;
+			}
+		}
+	}
+	else {
+		RGBQUAD rgb;
+		for(int i=0;i<h;i++) {
+			for(int j=0;j<w;j++) {
+				FreeImage_GetPixelColor(fimg,j,i,&rgb);
+				unsigned char* d=img.getData(j,i);
+				d[0] = rgb.rgbBlue;
+			}
+		}
+	}
+}
+#endif //HAVE_FREE_IMAGE
 
 #ifndef _WIN32
 bool ImportImageGDIPlus(const char* fn, Image& img) { return false; }
@@ -16,6 +112,28 @@ bool ImportImageGDIPlus(const char* fn, Image& img) { return false; }
 
 bool ImportImage(const char* fn, Image& img)
 {
+#if HAVE_FREE_IMAGE
+	_free_image_initializer.initialize();
+	FREE_IMAGE_FORMAT fif_type = FIF_UNKNOWN;
+	const char* ext = FileExtension(fn);
+	if(ext != NULL) {
+		if(0==strcmp(ext,"png")) 
+			fif_type = FIF_PNG;
+		else if(0==strcmp(ext,"jpg") || 0==strcmp(ext,"jpeg")) 
+			fif_type = FIF_JPEG;
+		else if(0==strcmp(ext,"bmp")) 
+			fif_type = FIF_BMP;
+		else if(0==strcmp(ext,"tif") || 0==strcmp(ext,"tiff")) 
+			fif_type = FIF_TIFF;
+	}
+	FIBITMAP* fimg = FreeImage_Load(fif_type,fn);
+	if(fimg != NULL) {
+		FreeImageBitmapToImage(fimg,img);
+		FreeImage_Unload(fimg);
+		return true;
+	}
+	LOG4CXX_ERROR(KrisLibrary::logger(),"FreeImage_Load result is NULL");
+#else 
 	const char* ext = FileExtension(fn);
 	if(!ext) {
 	  	  LOG4CXX_ERROR(KrisLibrary::logger(),"Couldnt detect an extension on image import file "<< fn);
@@ -48,11 +166,7 @@ bool ImportImage(const char* fn, Image& img)
 		return false;
 #endif //_WIN32
 	}
-	/*
-	{
-		ReportError("Unknown extension \"%s\" on image import file %s", ext, fn);
-		return false;
-	}*/
+#endif //HAVE_FREE_IMAGE
 }
 
 

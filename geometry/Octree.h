@@ -40,6 +40,8 @@ class Octree
   int Index(const OctreeNode& n) const { return &n - &nodes[0]; }
   ///Returns the node for a given index
   const OctreeNode& Node(int index) const { return nodes[index]; }
+  ///Returns the node for a given index
+  OctreeNode& Node(int index) { return nodes[index]; }
   ///Returns the maximum depth of the tree
   int MaxDepth() const;
   ///splits the Octree uniformly to the given depth d
@@ -126,10 +128,11 @@ class OctreePointSet : public Octree
   ///Collapses all non-leaf nodes if the collapsed number of points per cell
   ///is less than or equal to maxSize
   void Collapse(int maxSize=0);
-  ///Fits AABBs to point sets.  May speed up query times.  IMPORTANT: can no
+  ///Fits AABBs and balls to point sets.  May speed up query times.  IMPORTANT: can no
   ///longer use Lookup, Child, or Add after this is called because the octree
   ///subdivision property will no longer hold.
   void FitToPoints();
+  const Sphere3D& Ball(int index) const { return balls[index]; }
 
  protected:
   Real _NearestNeighbor(const OctreeNode& n,const Vector3& c,Vector3& closest,int& id,Real minDist) const;
@@ -144,6 +147,7 @@ class OctreePointSet : public Octree
   vector<vector<int> > indexLists;
   vector<Vector3> points;
   vector<int> ids;
+  vector<Sphere3D> balls;
   bool fit;
 };
 

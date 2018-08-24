@@ -314,7 +314,7 @@ void GeometryAppearance::Set(const AnyGeometry3D& _geom)
   geom = &_geom;
   if(geom->type == AnyGeometry3D::ImplicitSurface) {
     const Meshing::VolumeGrid* g = &geom->AsImplicitSurface();
-    if(!implicitSurfaceMesh) implicitSurfaceMesh = new Meshing::TriMesh;
+    if(!implicitSurfaceMesh) implicitSurfaceMesh.reset(new Meshing::TriMesh);
     ImplicitSurfaceToMesh(*g,*implicitSurfaceMesh);
     drawFaces = true;
   }
@@ -379,7 +379,7 @@ void GeometryAppearance::Set(const AnyGeometry3D& _geom)
       //draw mesh rather than points
       drawFaces = true;
       drawVertices = false;
-      if(!implicitSurfaceMesh) implicitSurfaceMesh = new Meshing::TriMesh;
+      if(!implicitSurfaceMesh) implicitSurfaceMesh.reset(new Meshing::TriMesh);
       PointCloudToMesh(pc,*implicitSurfaceMesh,*this,0.02);
     }
   }
@@ -530,11 +530,13 @@ void GeometryAppearance::DrawGL()
   
       const Meshing::TriMesh* trimesh = NULL;
       if(geom->type == AnyGeometry3D::ImplicitSurface) 
-	trimesh = implicitSurfaceMesh;
-      if(geom->type == AnyGeometry3D::PointCloud) 
-  trimesh = implicitSurfaceMesh;
-      if(geom->type == AnyGeometry3D::TriangleMesh) 
+	trimesh = implicitSurfaceMesh.get();
+      else if(geom->type == AnyGeometry3D::PointCloud) 
+  trimesh = implicitSurfaceMesh.get();
+      else if(geom->type == AnyGeometry3D::TriangleMesh) 
 	trimesh = &geom->AsTriangleMesh();
+      else if(geom->type == AnyGeometry3D::Primitive) 
+  draw(geom->AsPrimitive());
 
       //LOG4CXX_INFO(KrisLibrary::logger(),"Compiling face display list "<<trimesh->tris.size());
 
